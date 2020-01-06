@@ -5,14 +5,14 @@ import pandas as pd
 import pytest
 from pandas.testing import assert_frame_equal
 
-from cnswd.cninfo import FastSearch
+from cnswd.cninfo import FastSearcher
 from cnswd.setting.config import DB_CONFIG
 from cnswd.utils.path_utils import data_root
 
 
 @pytest.fixture
 def pageapi():
-    with FastSearch(False) as api:
+    with FastSearcher(False) as api:
         yield api
 
 

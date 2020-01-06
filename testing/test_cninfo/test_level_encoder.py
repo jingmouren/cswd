@@ -1,4 +1,4 @@
-from cnswd.cninfo.data_browse import _level_split, _LevelEncoder
+from cnswd.cninfo.classify_tree import _level_split, _LevelEncoder
 
 
 def test_with_enddate_1():
