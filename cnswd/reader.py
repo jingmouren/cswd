@@ -195,7 +195,8 @@ def classify_tree(plate=None, code=None):
 def stock_list():
     """股票列表"""
     r = ASRefresher()
-    return r.get_table_data('1')
+    df = r.get_table_data('1')
+    return df
 
 
 def calendar():
