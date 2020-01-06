@@ -348,3 +348,8 @@ MigrationBackup/
 
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
+
+cnswd.egg-info/
+.vscode/
+.pytest_cache/
+win_tasks/
