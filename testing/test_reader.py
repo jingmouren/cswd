@@ -8,20 +8,20 @@
 import pandas as pd
 import pytest
 import numpy as np
-from cnswd.reader import (cjmx, classify_tree, news, stock_list,
-                          trading_calendar, szx_daily_history, treasury)
+from cnswd.reader import (cjmx, classify_tree, news, stock_list, calendar,
+                          daily_history, treasury)
 from cnswd.scripts.wy_cjmx import _wy_fix_data
 from cnswd.websource.wy import fetch_cjmx
 from pandas.util.testing import assert_almost_equal
+from numpy.testing import assert_array_equal
 
 
 def test_read_news():
     """测试读取财经新闻"""
     start = pd.Timestamp('2019-12-18 14:35:00')
     end = pd.Timestamp('2019-12-18 15:00:00')
-    df = news(start, end)
+    df = news(None, start, end)
     assert len(df) == 26  # 26 行
-    assert (1529611 == df['序号']).sum() == 2  # 同一序号消息分别归于`A股`和`公司`
 
 
 def test_read_treasury():
@@ -45,26 +45,26 @@ def test_read_stock_list():
     """测试读取股票列表"""
     df = stock_list()
     assert len(df) > 3800
-    assert df.shape[1] == 42
+    assert df.shape[1] == 41
 
 
 def test_szx_daily_history():
     """测试读取深证信股票日线行情"""
-    df = szx_daily_history('000001', '2019-12-01', '2019-12-19')
-    assert len(df['交易日期'].unique()) == 14
+    df = daily_history('000001', '2019-12-01', '2019-12-19')
+    assert len(df['日期'].unique()) == 14
     assert len(df) == 14
-    assert df.shape[1] == 8
+    assert df.shape == (14, 16)
 
 
 def test_trading_dates():
     """测试交易日历"""
+    start = pd.Timestamp('2000-01-01')
     end = pd.Timestamp('2019-12-23')
-    tds = trading_calendar()
-    actual = [x for x in tds if x <= end]
+    tds = calendar()
+    actual = [x for x in tds if x <= end and x >= start]
     actual = np.array(actual)
-    expected = szx_daily_history('399001', None, end, True)['交易日期'].values
-    # TODO:好像减少了交易日历天数 期望 7048天，实际 7004
-    #
+    expected = daily_history('399001', start, end, True)['日期'].values
+    assert_array_equal(actual, expected)
 
 
 @pytest.mark.skip
@@ -73,7 +73,10 @@ def test_trading_dates():
     ('600390', '2019-12-16'),
 ])
 def test_cjmx(code, date):
-    """测试读取成交明细"""
+    """测试读取成交明细
+
+    只能提取最近一周的成交明细
+    """
     actual = cjmx(code, date)
     expected = fetch_cjmx(code, date)
     expected = _wy_fix_data(expected)

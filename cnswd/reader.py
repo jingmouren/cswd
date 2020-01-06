@@ -118,7 +118,7 @@ def news(cate, start, end):
     args = [
         ('分类', Ops.eq, cate),
         ('时间', Ops.gte, start),
-        ('分类', Ops.lse, end),
+        ('时间', Ops.lse, end),
     ]
     stmt = query_stmt(*args)
     r = SinaNewsRefresher()

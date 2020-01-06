@@ -24,7 +24,7 @@ def test_date_ns():
         assert pd.api.types.is_datetime64_ns_dtype(actual[col])
 
 
-def test_str_ns():
+def test_str():
     """测试字符类型"""
     cols = ['字符']
     data = simulation_data()
