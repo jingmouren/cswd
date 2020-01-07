@@ -30,6 +30,7 @@ from .ths_gn import update_gn_list, update_gn_time
 from .trading_calendar import refresh_trading_calendar
 from .wy_cjmx import refresh_wy_cjmx
 from .yahoo import refresh_all as refresh_yahoo_data
+from .tct_minutely import refresh_minutely_prices
 
 
 @click.group()
@@ -182,6 +183,12 @@ def yahoo():
 def tctgn():
     """刷新腾讯概念股票列表"""
     tct_gn_refresh()
+
+
+@stock.command()
+def tctm():
+    """刷新腾讯分钟级别交易数据"""
+    refresh_minutely_prices()
 
 
 # endregion
