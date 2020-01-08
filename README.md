@@ -55,7 +55,7 @@ pip install -e .
 # 有关存储路径设置，请修改`setting/config.py/DEFAULT_CONFIG`，然后安装
 ```
 ### 自动刷新
-参考`win_tasks/*.xml`文件，修改用户及响应信息，导入或手动设置后台计划任务。
+参考`win_tasks/*.xml`文件，修改用户及相应信息，导入或手动设置后台计划任务。
 ### 读取数据
 ```python
 # 必须完成数据刷新后才能读取本地数据

@@ -12,7 +12,62 @@ from .scripts.refresh import (ASRefresher, ClassifyBomRefresher,
 from .setting.config import DB_CONFIG
 from .utils import data_root, sanitize_dates
 
+
+def _minutely_history(fp):
+    df = pd.read_pickle(fp)
+    dt = fp.name.split('.')[0]
+    dt = pd.Timestamp(int(dt), unit='s')
+    df['时间'] = dt
+    df.reset_index(inplace=True)
+    return df
+
+
 # region 交易数据
+def minutely_history(code=None, start=None, end=None):
+    """分钟级别成交数据
+    
+    Arguments:
+        code {str} -- 股票代码。默认`None`代表全部股票
+        start {datetime_like}} -- 开始时间
+        end {datetime_like} -- 结束时间
+    
+    Returns:
+        DataFrame -- 成交数据
+
+    Usage:
+    >>> code = '000333'
+    >>> start = '2020-01-07 09:30'
+    >>> end = '2020-01-07 15:00'
+    >>> df = minutely_history(code, start, end)
+    >>> df[['时间','代码','今开','最高','最低','最新价']].tail()
+
+        时间	代码	今开	最高	最低	最新价
+    2748	2020-01-07 14:56:00	000333	57.400002	58.200001	57.200001	58.150002
+    2748	2020-01-07 14:57:00	000333	57.400002	58.200001	57.200001	58.150002
+    2748	2020-01-07 14:58:00	000333	57.400002	58.200001	57.200001	58.150002
+    2748	2020-01-07 14:59:00	000333	57.400002	58.200001	57.200001	58.150002
+    2748	2020-01-07 15:00:00	000333	57.400002	58.200001	57.200001	58.150002
+    """
+    start, end = sanitize_dates(start, end)
+    if start == end:
+        # 如果查询一天的数据，需要将日期更改为
+        end = end.normalize() + pd.Timedelta(days=1) - pd.Timedelta(minutes=1)
+    dates = pd.date_range(start, end)
+    dfs = []
+    for d in dates:
+        dp_dir = data_root(f"TCT/{d.strftime(r'%Y%m%d')}")
+        fps = dp_dir.glob('*.pkl')
+        for fp in fps:
+            df = _minutely_history(fp)
+            dfs.append(df)
+    ret = pd.concat(dfs)
+    cond = (ret['时间'] >= start) & (ret['时间'] <= end)
+    ret = ret[cond]
+    ret['代码'] = ret['代码'].map(lambda x: x[2:])
+    if code:
+        return ret[ret['代码'] == code]
+    else:
+        return ret
 
 
 def daily_history(code, start, end, is_index=False):
