@@ -12,6 +12,6 @@ def remove_temp_files():
     for p in paths:
         try:
             shutil.rmtree(p)
-        except PermissionError:
+        except (PermissionError, FileNotFoundError):
             # 可能后台正在使用中，忽略
             pass

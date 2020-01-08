@@ -11,6 +11,8 @@ from ..setting.constants import MAX_WORKER
 from ..utils import data_root, ensure_dtypes, loop_codes, make_logger
 from ..websource.wy import fetch_cjmx
 from .trading_calendar import is_trading_day
+from ..reader import daily_history
+
 
 logger = make_logger('网易股票成交明细')
 DATE_FMT = r'%Y-%m-%d'
@@ -71,17 +73,16 @@ def write_cjmx(codes, date):
         print(failed)
 
 
-def stock_is_trading(fp, date):
+def stock_is_trading(code, date):
     """股票当天是否交易"""
-    df = pd.read_hdf(fp, 'data')
-    code = fp.name.split('.')[0]
+    df = daily_history(code, date, date)
     try:
         cond = df.loc[df['日期'] == date, '成交量'].values[0]
         if cond > 0:
             return code
         else:
             return None
-    except IndexError:
+    except Exception:
         return None
 
 
@@ -90,9 +91,10 @@ def get_traded_codes(date):
     """当天交易的股票代码列表"""
     fp = data_root('wy_stock')
     fps = fp.glob('*.h5')
+    codes = [fp.name.split('.')[0] for fp in fps]
     func = partial(stock_is_trading, date=date)
     with Pool(MAX_WORKER) as pool:
-        res = pool.map(func, fps)
+        res = pool.map(func, codes)
     return [x for x in res if x is not None]
 
 
