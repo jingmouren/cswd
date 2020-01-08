@@ -47,7 +47,11 @@ def query_stmt(*args):
 
 
 def query(fp, stmt):
-    store = pd.HDFStore(fp, mode='r')
-    df = store.select('data', stmt, auto_close=True)
-    store.close()
-    return df
+    try:
+        store = pd.HDFStore(fp, mode='r')
+        df = store.select('data', stmt, auto_close=True)
+        return df
+    except OSError as e:
+        raise FileNotFoundError(f"{e!r}")
+    finally:
+        store.close()
