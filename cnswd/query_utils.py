@@ -1,6 +1,7 @@
 from enum import Enum, unique
 import pandas as pd
 from cnswd.utils import ensure_dt_localize
+import warnings
 
 
 @unique
@@ -50,8 +51,8 @@ def query(fp, stmt):
     try:
         store = pd.HDFStore(fp, mode='r')
         df = store.select('data', stmt, auto_close=True)
-        return df
-    except OSError as e:
-        raise FileNotFoundError(f"{e!r}")
-    finally:
         store.close()
+        return df
+    except Exception as e:
+        warnings.warn(f"{e!r}")
+        return pd.DataFrame()
