@@ -9,6 +9,8 @@ class Ops(Enum):
     eq = 1  # ==
     gte = 2  # >=
     lse = 3  # <=
+    gt = 4 # >
+    ls = 5 # <
 
 
 def _to_op_symbol(e):
@@ -16,8 +18,13 @@ def _to_op_symbol(e):
         return '=='
     elif e == Ops.gte:
         return '>='
-    else:
+    elif e == Ops.lse:
         return '<='
+    elif e == Ops.gt:
+        return '>'
+    elif e == Ops.ls:
+        return '<'
+    raise ValueError(f'不支持比较操作符号{e}')
 
 
 def force_freq_to_none(v):

@@ -8,14 +8,18 @@ Notes:
     4. 记录保持在'record'
     5. `last_date`专门用于计算start
     6. `next_time`指示下一次可更新时间
+
+pd.HDFStore(fp, 'w') 会重写已经存在的数据！！！
 """
+
+import warnings
 
 import pandas as pd
 
 from cnswd.setting.constants import MARKET_START
 from cnswd.utils import make_logger
 
-from .query_utils import query, query_stmt, Ops
+from .query_utils import Ops, query, query_stmt
 
 default_status = {
     'completed': False,  # 网络提取状态，如途中发生异常为False
@@ -28,22 +32,15 @@ default_status = {
     'next_time': MARKET_START,  # 下次可刷新数据的时间
     'last_date': MARKET_START,  # 刷新的结束日期
     'memo': '-',
-    'rows': 0,  # 数据行数
 }
 
 # 参数模板
 to_hdf_kwargs = {
-    # 'append': True,
+    'append': True,
     'format': 'table',
     'complevel': 9,
     'complib': 'blosc:blosclz',
-    # 查询索引列
-    # 'data_columns': ['id'],
-    'index': False,
-    # 字符串最小长度
-    # 'min_itemsize': {
-    #     '概要': 2000
-    # }
+    'ignore_index': True,
 }
 
 
@@ -63,6 +60,7 @@ class HDFData(object):
         self._mode = mode
         self._record = default_status.copy()
         self.logger = make_logger('HDFData')
+        self._codes = None
 
     @property
     def file_path(self):
@@ -84,17 +82,43 @@ class HDFData(object):
         """刷新记录"""
         try:
             self._record = pd.read_hdf(self._fp, 'record').to_dict()
-            if 'rows' not in self._record.keys():
-                self._record['rows'] = len(self.data)
         except Exception:
-            self._record['rows'] = 0
+            pass
         return self._record
+
+    @property
+    def nrows(self):
+        """数据行数"""
+        try:
+            with pd.HDFStore(self._fp, 'r') as store:
+                try:
+                    return store.get_storer('data').nrows
+                except Exception:
+                    return 0
+        except Exception:
+            return 0
+
+    def get_codes(self, code_col='股票代码', force=False):
+        """股票代码
+        
+        Keyword Arguments:
+            code_col {str} -- 表示股票代码的列名称 (default: {'股票代码'})
+            force {bool} -- 是否强制重新查询 (default: {False})
+        
+        Returns:
+            list -- 股票代码列表
+        """
+        if self._codes is None or force:
+            try:
+                self._codes = self.data[code_col].unique().tolist()
+            except Exception:
+                self._codes = []
+        return self._codes
 
     @property
     def has_data(self):
         """是否有数据（空数据视同无数据）"""
-        nrows = self.record['rows']
-        return nrows >= 1
+        return self.nrows >= 1
 
     @property
     def appendable(self):
@@ -111,26 +135,31 @@ class HDFData(object):
         """当前索引最大值"""
         if self._mode == 'w':
             return None
-        record = self.record
-        max_index = record['max_index']
         if self.has_data:
-            if max_index is None:
-                return max(self.data[index_col])
-            else:
-                return max_index
+            return max(self.data[index_col])
         return None
 
-    def get_data(self, index_col, max_index):
-        """获取列大于等于索引值的数据
+    def _ensure_pop_index(self, df):
+        if 'index' in df.columns:
+            df.pop('index')
+        return df
+
+    def get_data_after(self, index_col, max_index, by_col=None, by_value=None):
+        """获取列大于或等于索引值的数据
         
         Arguments:
             index_col {str} -- 索引列名称
             max_index {object} -- 最大索引值
+            by_col {str} -- 列名称
+            by_value {str} -- 值
         
         Returns:
             DataFrame -- 满足条件（列大于等于索引值）的数据
         """
-        args = [(index_col, Ops.gte, max_index)]
+        args = [
+            (index_col, Ops.gte, max_index),
+            (by_col, Ops.eq, by_value),
+        ]
         stmt = query_stmt(*args)
         fp = self.file_path
         return query(fp, stmt)
@@ -152,16 +181,29 @@ class HDFData(object):
         """重写"""
         data_columns = kwargs.get('data_columns', True)
         if not df.empty:
-            df.to_hdf(self._fp,
-                      'data',
-                      append=False,
-                      index=False,
-                      data_columns=data_columns,
-                      format='table')
+            df.to_hdf(
+                self._fp,
+                'data',
+                mode='w',  # 删除现有文件
+                append=False,
+                ignore_index=True,
+                data_columns=data_columns,
+                format='table')
             self.logger.info(f"写入{len(df)}行 -> {self._fp}")
-            nrows = self.record['rows'] + len(df)
-            record['rows'] = nrows
         self._set_record(record)
+
+    def _to_hdf(self, data, kwargs, action):
+        if data.empty:
+            return
+        if action == 'rewrite':
+            if self._fp.exists():
+                self._fp.unlink()
+        elif action == 'append':
+            pass
+        else:
+            raise ValueError(f'写入hdf不支持{action}')
+        data = self._ensure_pop_index(data)
+        data.to_hdf(self._fp, 'data', **kwargs)
 
     def _get_to_add(self, df, record, subset):
         """截取添加数据"""
@@ -169,17 +211,35 @@ class HDFData(object):
             index_col = record['index_col']
             if index_col is None:
                 old = self.data
+                keep = 'first'
             else:
+                keep = False
                 old_max_index = self.get_max_index(index_col)
                 # 如近期公布的财务报告，原记录最大值 2019-4季度
                 max_index = max(old_max_index, min(df[index_col]))
-                old = self.get_data(index_col, max_index)
+                old = self.get_data_after(index_col, max_index)
+                cond = df[index_col] < max_index
+                nrows = len(df[cond])
+                if nrows:
+                    msg = f'要插入的数据中包含{nrows}行历史数据，{index_col} < {max_index}， 这会导致插入重复值'
+                    warnings.warn(msg, UserWarning)
             merged = pd.concat([old, df], sort=False)
             # 不保留重复部分
-            to_add = merged.drop_duplicates(subset, keep=False)
-            return to_add
+            to_add = merged.drop_duplicates(subset, keep=keep)
+            return to_add, 'rewrite' if keep == 'first' else 'append'
         else:
-            return df
+            return df, 'append'
+
+    def _get_to_add_by(self, df, record, by, value):
+        """截取添加数据"""
+        index_col = record['index_col']
+        old = self.get_data_after(None, None, by, value)
+        if old.empty:
+            return df, 'append'
+        old_index = old.loc[old[by] == value, index_col].values
+        isin = df[index_col].isin(old_index)
+        to_add = df[~isin]
+        return to_add, 'append'
 
     def _append(self, df, record, kwargs):
         kwargs['append'] = True
@@ -195,22 +255,19 @@ class HDFData(object):
                 # 更新最大值
                 max_index = max(df[index_col])
             if not self.has_data:
-                df.to_hdf(self._fp, 'data', **kwargs)
+                self._to_hdf(df, kwargs, 'append')
                 rows = len(df)
             else:
-                to_add = self._get_to_add(df, record, subset)
+                to_add, action = self._get_to_add(df, record, subset)
                 if len(to_add) >= 1:
-                    to_add.to_hdf(self._fp, 'data', **kwargs)
+                    self._to_hdf(to_add, kwargs, action)
                     max_index = max(to_add[index_col]) if index_col else None
                     rows = len(to_add)
                 else:
                     rows = 0
-            nrows = self.record['rows'] + rows
-            record['rows'] = nrows
             self.logger.info(f"添加{rows}行 -> {self._fp}")
             record['max_index'] = max_index
         self._set_record(record)
-        # self.create_table_index(data_columns)
 
     def add(self, df, record, kwargs={}):
         """添加或重写数据及记录"""
@@ -222,9 +279,28 @@ class HDFData(object):
             self._append(df, record, default)
         else:
             self._rewrite(df, record, default)
-        # 关闭，减少内存耗用。
-        # store = pd.HDFStore(self._fp)
-        # store.close()
+
+    def insert_by(self, df, record, kwargs, by, value):
+        default = to_hdf_kwargs.copy()
+        default.update(kwargs)
+        kwargs['append'] = True
+        try:
+            kwargs.pop('subset')
+        except KeyError:
+            pass
+        if not df.empty:
+            if not self.has_data:
+                self._to_hdf(df, kwargs, 'append')
+                rows = len(df)
+            else:
+                to_add, action = self._get_to_add_by(df, record, by, value)
+                if len(to_add) >= 1:
+                    self._to_hdf(to_add, kwargs, action)
+                    rows = len(to_add)
+                else:
+                    rows = 0
+            self.logger.info(f"添加{rows}行 -> {self._fp}")
+        self._set_record(record)
 
     def create_table_index(self, data_columns):
         """创建索引"""

@@ -65,7 +65,7 @@ from numpy.random import shuffle
 
 from ..cninfo import (AdvanceSearcher, ClassifyTree, FastSearcher,
                       ThematicStatistics)
-from ..cninfo.utils import get_field_type
+from ..cninfo.utils import get_field_type, get_min_itemsize
 from ..data import HDFData, default_status
 from ..setting.config import DB_CONFIG, TS_CONFIG
 from ..setting.constants import MAIN_INDEX, MARKET_START, MAX_WORKER, TZ
@@ -306,7 +306,6 @@ class RefresherBase(object):
                 record['retry_times'] = i
                 record, web_data = self._normalize_data(
                     one, web_data, record, use_last_date)
-
         hdf.add(web_data, record, kwargs)
 
     def refresh_batch(self, batch):
@@ -451,23 +450,130 @@ class ASRefresher(RefresherBase):
 
     def get_min_itemsize(self, one):
         """定义列字符串最小长度"""
+        if one == '1':
+            return get_min_itemsize('db', '1')
         try:
             return DB_CONFIG[one]['min_itemsize']
         except KeyError:
             return {}
 
+    def _get_one(self, fetch_data_func, one, kwargs, codes, start, end):
+        """单项刷新"""
+        kwargs = kwargs.copy()
+        data_columns = self.get_data_columns(one)
+        kwargs.update({'data_columns': data_columns})
+        # 由于初始化时一次性写入数据，忽略了min_itemsize问题
+        kwargs.update({'min_itemsize': self.get_min_itemsize(one)})
+
+        logger = self.logger
+        record = self.get_record(one)
+
+        record['level'] = one
+        record['name'] = DB_CONFIG[one]['name']
+
+        use_last_date = True
+
+        # 进入刷新
+        # 重置完成状态
+        record['completed'] = False
+
+        for i in range(1, self.retry_times + 1):
+            if record['completed']:
+                break
+            try:
+                # 只捕获网络数据提取部分的异常
+                web_data = fetch_data_func(one, start, end, codes)
+                record['completed'] = True
+                record['memo'] = '-'  # 清除此前可能遗留的备注
+            except Exception as e:
+                web_data = pd.DataFrame()
+                logger.exception(f"第{i}次尝试提取网络数据，{one}出现异常\n")
+                record['completed'] = False
+                record['memo'] = f"第{i}次尝试中出现异常{e}"
+            finally:
+                record['completed_time'] = pd.Timestamp.now(tz=TZ)
+                record['retry_times'] = i
+                record, web_data = self._normalize_data(
+                    one, web_data, record, use_last_date)
+        return web_data, record, kwargs
+
+    def _get_start(self, one, use_last_date, one_by_one):
+        if one_by_one:
+            min_date = self.get_min_date(one)
+            if min_date is None:
+                start = None
+            else:
+                start = min_date
+        else:
+            start = self.get_start(one, use_last_date)
+        end = pd.Timestamp.now(tz=TZ)
+        return start, end
+
+    def refresh_one(self, fetch_data_func, one, kwargs, web_codes):
+        """单项刷新"""
+        local_codes = self.get_hdfdata(one).get_codes()
+        hdf = self.get_hdfdata(one)
+        logger = self.logger
+        record = self.get_record(one)
+        use_last_date = True
+        # 将代码划分为二部分：
+        # 1. 本地数据中已有的代码 codes_0
+        # 2. 网络代码除本地代码外的部分，此部分使用单个代码方式添加数据 codes_1
+        if len(local_codes) == 0:
+            codes_0 = None
+            codes_1 = []
+        else:
+            # 网络代码与本地代码的交集
+            codes_0 = list(set(web_codes).intersection(set(local_codes)))
+            # 差集
+            codes_1 = list(set(web_codes).difference(set(local_codes)))
+
+        start_0, _ = self._get_start(one, use_last_date, False)
+        start_1, end = self._get_start(one, use_last_date, True)
+
+        # 初始化时使用分段 ■
+        # end = pd.Timestamp('2010-12-31', tz=TZ)
+
+        completed = False
+        completed_time = ensure_dt_localize(record['completed_time'])
+        delta = end - completed_time
+
+        # 最近4小时之内已经完成，不再刷新
+        if record['completed'] and delta < pd.Timedelta(hours=4):
+            completed = True
+        if completed:
+            logger.info(f"在最近4小时内，{DB_CONFIG[one]['name']}({one}) 数据已经刷新")
+            return
+
+        if codes_0 is None or len(codes_0):
+            web_data_0, record_0, kwargs_0 = self._get_one(
+                fetch_data_func, one, kwargs, codes_0, start_0, end)
+            hdf.add(web_data_0, record_0, kwargs_0)
+        # 单个添加
+        if len(codes_1):
+            web_data_1, record_1, kwargs_1 = self._get_one(
+                fetch_data_func, one, kwargs, codes_1, start_1, end)
+            if not web_data_1.empty:
+                grouped = web_data_1.groupby('股票代码')
+                for code, group in grouped:
+                    hdf.insert_by(group, record_1, kwargs_1, '股票代码', code)
+
     def refresh_batch(self, batch):
         """分批刷新"""
         kwargs = {
-            'use_last_date': True,
             'min_itemsize': {
                 '股票简称': 20,
             },
         }
-        with AdvanceSearcher() as api:
-            fetch_data_func = api.get_data
-            for one in batch:
-                self.refresh_one(fetch_data_func, one, kwargs)
+        api = AdvanceSearcher()
+        codes = api.codes
+        fetch_data_func = api.get_data
+        for one in batch:
+            try:
+                self.refresh_one(fetch_data_func, one, kwargs, codes)
+            except Exception as e:
+                print(f"{e!r}")
+        api.driver.quit()
 
 
 class MarginDataRefresher(RefresherBase):
@@ -613,13 +719,13 @@ class ClassifyTreeRefresher(RefresherBase):
         """列数据类型"""
         return {
             'd_cols': [],
-            's_cols': ['证券代码', '证券简称', '分类层级', '分类名称', '分类编码', '平台类别'],
+            's_cols': ['股票代码', '股票简称', '分类层级', '分类名称', '分类编码', '平台类别'],
             'i_cols': [],
         }
 
     def get_data_columns(self, one):
         """查询数据列"""
-        return ['证券代码', '平台类别']
+        return ['股票代码', '平台类别']
 
     def refresh_all(self):
         kwargs = {'min_itemsize': {'分类名称': 30, '平台类别': 20}}

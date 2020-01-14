@@ -1,7 +1,9 @@
 import pandas as pd
 from collections import OrderedDict
 from os import path
+import re
 
+NUM_PAT = re.compile(r'\d{1,}')
 here = path.abspath(path.dirname(__file__))
 
 
@@ -43,7 +45,7 @@ def get_field_type(item, level):
             s_cols.append(row['中文名称'])
         elif type_ in ('big', 'int'):
             i_cols.append(row['中文名称'])
-        elif type_ in ('dec', ):
+        elif type_ in ('dec', 'num'):
             f_cols.append(row['中文名称'])
     return {
         'd_cols': d_cols,
@@ -51,3 +53,25 @@ def get_field_type(item, level):
         'i_cols': i_cols,
         'f_cols': f_cols,
     }
+
+
+def get_min_itemsize(item, level):
+    """获取字符类列最小长度"""
+    assert level in ('1', )
+    fp = path.join(here, 'api_doc', item, f"{level}.csv")
+    df = pd.read_csv(fp, '\t', dtype={'类型': str})
+    df.columns = df.columns.str.strip()    
+    ret = {}
+    for _, row in df.iterrows():
+        name = row['中文名称']
+        type_ = row['类型'][:3].lower()
+        if name == '股票代码':
+            ret[name] = 6
+            continue
+        if name == '股票简称':
+            ret[name] = 20
+            continue
+        if type_ in ('var', 'char'):
+            len_ = re.findall(NUM_PAT, row['类型'])[0]
+            ret[name] = int(len_)
+    return ret

@@ -130,16 +130,10 @@ class ClassifyTree(object):
     def __exit__(self, *args):
         self.driver.quit()
 
-    def _btn2(self):
+    def btn2(self):
         """高级搜索"""
         css = '#btn2'
         self.driver.find_element_by_css_selector(css).click()
-
-    def btn2(self):
-        """更改为高级搜索"""
-        if not self.btned:
-            self._btn2()
-            self.btned = True
 
     def _construct_css(self, level):
         nums = level.split('.')
@@ -182,8 +176,8 @@ class ClassifyTree(object):
                 self.logger.info(f'分类树层级：{level} 行数:{num}')
                 if num >= 1:
                     records = data['records']
-                    df['证券代码'] = [x['SECCODE'] for x in records]
-                    df['证券简称'] = [x['SECNAME'] for x in records]
+                    df['股票代码'] = [x['SECCODE'] for x in records]
+                    df['股票简称'] = [x['SECNAME'] for x in records]
 
                     df['分类层级'] = level
                     df['分类编码'] = values[0]

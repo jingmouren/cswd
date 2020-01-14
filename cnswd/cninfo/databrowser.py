@@ -4,13 +4,14 @@ import re
 import time
 
 import pandas as pd
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
 from .._seleniumwire import make_headless_browser
 from ..setting.config import DB_CONFIG, POLL_FREQUENCY, TIMEOUT
-from ..utils import make_logger
+from ..utils import ensure_list, make_logger, sanitize_dates
 from ..utils.loop_utils import loop_codes, loop_period_by
 from ..utils.pd_utils import _concat
 from .ops import (change_year, datepicker, navigate, toggler_open,
@@ -100,7 +101,7 @@ class DataBrowser(object):
         if level is None:
             item = ''
         else:
-            item = self.config[level]['name']
+            item = f"{self.config[level]['name']}({level})"
         if pd.api.types.is_number(start):
             if pd.api.types.is_number(end):
                 msg = f'{start}年{end}季度'
@@ -129,7 +130,7 @@ class DataBrowser(object):
             navigate(self.driver, level)
             self.current_level = level
 
-    def load_all_code(self, codes):
+    def _load_all_code(self, codes):
         """选择查询的股票代码"""
         pass
 
@@ -210,6 +211,27 @@ class DataBrowser(object):
 
     def get_data(self, level, start=None, end=None):
         raise NotImplementedError('子类中完成')
+
+    def click_elem(self, elem):
+        """点击所选元素"""
+        self.driver.execute_script("arguments[0].scrollIntoView();", elem)
+        actions = ActionChains(self.driver)
+        actions.move_to_element(elem).click().perform()
+
+    def scroll(self, size):
+        """
+        上下滚动到指定位置
+
+        参数:
+        ----
+        size: float, 屏幕自上而下的比率
+        """
+        # 留存
+        # 滚动到屏幕底部
+        # self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        h = self.driver.get_window_size()['height']
+        js = f"var q=document.documentElement.scrollTop={int(size * h)}"
+        self.driver.execute_script(js)
 
 
 class FastSearcher(DataBrowser):
@@ -297,6 +319,7 @@ class FastSearcher(DataBrowser):
         Returns:
             pd.DataFrame -- 如期间没有数据，返回长度为0的空表
         """
+        start, end = sanitize_dates(start, end)
         if self.driver is None:
             self._ensure_init()
 
@@ -322,6 +345,7 @@ class FastSearcher(DataBrowser):
 class AdvanceSearcher(DataBrowser):
     """高级搜索"""
     api_name = '高级搜索'
+    _codes = None
 
     def _bt(self):
         self.driver.find_element_by_id('btn2').click()
@@ -334,7 +358,7 @@ class AdvanceSearcher(DataBrowser):
         # 全选数据字段
         self._add_or_delete_all(label_css, btn_css)
 
-    def load_all_code(self):
+    def _load_all_code(self):
         """选择查询的股票代码"""
         if self.code_loaded:
             return
@@ -358,20 +382,58 @@ class AdvanceSearcher(DataBrowser):
             self._add_or_delete_all(add_label_css, add_btn_css)
         self.code_loaded = True
 
+    def _choose_code(self, code):
+        elem = self.driver.find_element_by_xpath(f"//span[@data-id='{code}']")
+        elem.find_element_by_xpath('../i').click()
+
+    def _code_num(self, css):
+        n = self.driver.find_element_by_css_selector(css).text
+        try:
+            return int(n)
+        except Exception:
+            return 0
+
+    def _delete_selected_code(self):
+        css = '.cont-top-right > div:nth-child(3) > div:nth-child(1) > span:nth-child(2) > i:nth-child(1)'
+        num = self._code_num(css)
+        if num:
+            del_label_css = '.cont-top-right > div:nth-child(3) > div:nth-child(1) > label:nth-child(1)'
+            del_btn_css = '.cont-top-right > div:nth-child(2) > div:nth-child(1) > button:nth-child(2)'
+            self._add_or_delete_all(del_label_css, del_btn_css)
+
+    def _select_all_code(self):
+        css = '.cont-top-right > div:nth-child(1) > div:nth-child(1) > span:nth-child(2) > i:nth-child(1)'
+        num = self._code_num(css)
+        if num:
+            add_label_css = '.cont-top-right > div:nth-child(1) > div:nth-child(1) > label:nth-child(1)'
+            add_btn_css = '.cont-top-right > div:nth-child(2) > div:nth-child(1) > button:nth-child(1)'
+            self._add_or_delete_all(add_label_css, add_btn_css)
+
+    def _reload_all_code(self):
+        self._delete_selected_code()
+        self._select_all_code()
+
+    def _set_query_codes(self, codes):
+        """设置查询代码"""
+        self._load_all_code()
+        if codes is None:
+            self._reload_all_code()
+            return
+        codes = ensure_list(codes)
+        # 将全部股票放入待选区
+        self._delete_selected_code()
+        # 选择查询代码
+        for code in codes:
+            self._choose_code(code)
+        add_css = '.cont-top-right > div:nth-child(2) > div:nth-child(1) > button:nth-child(1)'
+        self.driver.find_element_by_css_selector(add_css).click()
+
     def _add_or_delete_all(self, label_css, btn_css):
         """添加或删除所选全部元素"""
         # 点击全选元素
         self.driver.find_element_by_css_selector(label_css).click()
         # 点击命令按钮
         self.driver.find_element_by_css_selector(btn_css).click()
-
-    # def _before_read(self):
-    #     # 等待加载完成
-    #     wait_for_preview_css = '.span_target'
-    #     wait_for_preview_css_value = 'display: none;'
-    #     msg = f'项目：{self.api_name} 加载数据超时'
-    #     wait_for_preview(self.wait, wait_for_preview_css,
-    #                      wait_for_preview_css_value, msg, False)
 
     def _before_read(self):
         """等待数据完成加载"""
@@ -425,7 +487,15 @@ class AdvanceSearcher(DataBrowser):
         if len(lis):
             self._select_all_fields()
 
-    def get_data(self, level, start=None, end=None):
+    @property
+    def codes(self):
+        """当前交易状态中的股票列表"""
+        if self._codes is None:
+            df = self.get_data('1', codes=None)
+            self._codes = df['股票代码'].to_list()
+        return self._codes
+
+    def get_data(self, level, start=None, end=None, codes=None):
         """获取项目所有股票期间数据
 
         Arguments:
@@ -434,6 +504,7 @@ class AdvanceSearcher(DataBrowser):
         Keyword Arguments:
             start {str} -- 开始日期 (default: {None})，如为空，使用市场开始日期
             end {str} -- 结束日期 (default: {None})，如为空，使用当前日期
+            codes {list like} -- 股票代码 (default: {None})，如为空，使用全部代码
 
 
         Usage:
@@ -444,11 +515,12 @@ class AdvanceSearcher(DataBrowser):
         Returns:
             pd.DataFrame -- 如期间没有数据，返回长度为0的空表
         """
+        start, end = sanitize_dates(start, end)
         if self.driver is None:
             self._ensure_init()
         # 务必保持顺序，否则由于屏幕位置滚动导致某些元素不可点击
         self.select_nav(level)  # 1 选择 项目
-        self.load_all_code()  # 2 加载股票代码
+        self._set_query_codes(codes)  # 2 加载股票代码
         self._ensure_select_all_fields()  # 3 加载字段
         self._log_info('==> ', level, start, end, " <==")
         data = self._loop_by_period(level, start, end)  # 4 设置期间

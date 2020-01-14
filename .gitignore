@@ -353,3 +353,4 @@ cnswd.egg-info/
 .vscode/
 .pytest_cache/
 win_tasks/
+pytest_report.html

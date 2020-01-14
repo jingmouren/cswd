@@ -115,7 +115,7 @@ def margin(code, start, end):
     r = MarginDataRefresher()
     fp = r.get_data_path(None)
     stmt = query_stmt(*[
-        ('证券代码', Ops.eq, code),
+        ('股票代码', Ops.eq, code),
         ('交易日期', Ops.gte, start),
         ('交易日期', Ops.lse, end),
     ])
@@ -236,15 +236,15 @@ def classify_tree(plate=None, code=None):
     fp = r.get_data_path(one)
     args = [
         ('平台类别', Ops.eq, plate_code),
-        ('证券代码', Ops.eq, code),
+        ('股票代码', Ops.eq, code),
     ]
     stmt = query_stmt(*args)
     df = query(fp, stmt)
     if code:
         return {code: df['分类名称'].values[0]}
     else:
-        part = df[['证券代码', '分类名称']]
-        return part.set_index('证券代码').to_dict()['分类名称']
+        part = df[['股票代码', '分类名称']]
+        return part.set_index('股票代码').to_dict()['分类名称']
 
 
 def stock_list():
