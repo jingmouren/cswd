@@ -552,6 +552,7 @@ class ASRefresher(RefresherBase):
         fetch_data_func = self._fs.get_data
         web_data, record, kwargs = self._get_one(fetch_data_func, one, kwargs,
                                                  code, start, end)
+        # 如果刷新成功，则将代码添加到已经完成初始化刷新代码列表中
         record = self._update_inited_codes(record, code)
         if not web_data.empty:
             hdf.insert_by(web_data, record, kwargs, '股票代码', code)
