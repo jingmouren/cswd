@@ -245,7 +245,10 @@ class FastSearcher(DataBrowser):
     input_code_css = '#input_code'
 
     def _bt(self):
-        self.driver.find_element_by_id('btn1').click()
+        try:
+            self.driver.find_element_by_id('btn1').click()
+        except Exception:
+            pass
 
     def _select_code(self, code):
         """输入代码"""
@@ -322,7 +325,7 @@ class FastSearcher(DataBrowser):
         start, end = sanitize_dates(start, end)
         if self.driver is None:
             self._ensure_init()
-
+        self._bt()
         self.select_nav(level)
         assert re.compile(r'^\d{6}$').match(
             code), f'`code`参数应为6位数字的股票代码，实际为：{code}'
@@ -348,7 +351,10 @@ class AdvanceSearcher(DataBrowser):
     _codes = None
 
     def _bt(self):
-        self.driver.find_element_by_id('btn2').click()
+        try:
+            self.driver.find_element_by_id('btn2').click()
+        except Exception:
+            pass
 
     def _select_all_fields(self):
         """全选字段"""
@@ -518,6 +524,7 @@ class AdvanceSearcher(DataBrowser):
         start, end = sanitize_dates(start, end)
         if self.driver is None:
             self._ensure_init()
+        self._bt()
         # 务必保持顺序，否则由于屏幕位置滚动导致某些元素不可点击
         self.select_nav(level)  # 1 选择 项目
         self._set_query_codes(codes)  # 2 加载股票代码
