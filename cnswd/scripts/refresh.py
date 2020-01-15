@@ -77,6 +77,7 @@ from ..websource.tencent import get_recent_trading_stocks
 from ..websource.treasuries import (EARLIEST_POSSIBLE_DATE, download_last_year,
                                     fetch_treasury_data_from)
 from ..websource.wy import fetch_history
+from ..query_utils import query, query_stmt, Ops
 
 warnings.filterwarnings("ignore")
 
@@ -401,6 +402,8 @@ class FSRefresher(RefresherBase):
 
 class ASRefresher(RefresherBase):
     """高级搜索刷新器"""
+    _fs = None
+
     @property
     def iterables(self):
         """循环列表"""
@@ -470,7 +473,12 @@ class ASRefresher(RefresherBase):
 
         record['level'] = one
         record['name'] = DB_CONFIG[one]['name']
-
+        # 使用最后日期的意义在于
+        # 日线数据每日递增，股票总体可在同一天同步
+        # 而财务报告发布日期并不同步
+        # 如年初~3月期间，各上市公司发布去年年报
+        # 在此期间刷新数据，刷新期间为 （X-1）-12-31 ~ today
+        # 提取的网络数据与本地同期数据合并，不保留重复部分，即为新增
         use_last_date = True
 
         # 进入刷新
@@ -481,8 +489,13 @@ class ASRefresher(RefresherBase):
             if record['completed']:
                 break
             try:
-                # 只捕获网络数据提取部分的异常
-                web_data = fetch_data_func(one, start, end, codes)
+                if codes is None:
+                    # 只捕获网络数据提取部分的异常
+                    # 高级搜索
+                    web_data = fetch_data_func(one, start, end, codes)
+                else:
+                    # 快速搜索
+                    web_data = fetch_data_func(one, codes, start, end)
                 record['completed'] = True
                 record['memo'] = '-'  # 清除此前可能遗留的备注
             except Exception as e:
@@ -497,17 +510,34 @@ class ASRefresher(RefresherBase):
                     one, web_data, record, use_last_date)
         return web_data, record, kwargs
 
-    def _get_start(self, one, use_last_date, one_by_one):
-        if one_by_one:
-            min_date = self.get_min_date(one)
-            if min_date is None:
-                start = None
-            else:
-                start = min_date
-        else:
-            start = self.get_start(one, use_last_date)
-        end = pd.Timestamp.now(tz=TZ)
-        return start, end
+    def _get_ipo_by_code(self, code):
+        """查询股票上市日期"""
+        fp = self.get_data_path('1')
+        args = [
+            ('股票代码', Ops.eq, code),
+        ]
+        stmt = query_stmt(*args)
+        df = query(fp, stmt)
+        return df['上市日期'].values[0]
+
+    def _one_by_one(self, one, code, kwargs):
+        """使用快速搜索
+        
+        避免开始日期设置为市场开始日期，无效循环，导致引发异常
+        """
+        start = self._get_ipo_by_code(code)
+        end = pd.Timestamp.now()
+        # 未上市或在未来日期上市的股票，暂不刷新
+        # 但股票概况或IPO则需要
+        if one not in ('1', '6.5'):
+            if pd.isnull(start) or start >= end:
+                return
+        hdf = self.get_hdfdata(one)
+        fetch_data_func = self._fs.get_data
+        web_data, record, kwargs = self._get_one(fetch_data_func, one, kwargs,
+                                                 code, start, end)
+        if not web_data.empty:
+            hdf.insert_by(web_data, record, kwargs, '股票代码', code)
 
     def refresh_one(self, fetch_data_func, one, kwargs, web_codes):
         """单项刷新"""
@@ -516,47 +546,35 @@ class ASRefresher(RefresherBase):
         logger = self.logger
         record = self.get_record(one)
         use_last_date = True
-        # 将代码划分为二部分：
-        # 1. 本地数据中已有的代码 codes_0
-        # 2. 网络代码除本地代码外的部分，此部分使用单个代码方式添加数据 codes_1
         if len(local_codes) == 0:
-            codes_0 = None
-            codes_1 = []
+            new_codes = []
         else:
-            # 网络代码与本地代码的交集
-            codes_0 = list(set(web_codes).intersection(set(local_codes)))
             # 差集
-            codes_1 = list(set(web_codes).difference(set(local_codes)))
+            new_codes = list(set(web_codes).difference(set(local_codes)))
 
-        start_0, _ = self._get_start(one, use_last_date, False)
-        start_1, end = self._get_start(one, use_last_date, True)
-
+        end = pd.Timestamp.now(tz=TZ)
         # 初始化时使用分段 ■
         # end = pd.Timestamp('2010-12-31', tz=TZ)
+        start = self.get_start(one, use_last_date)
 
         completed = False
         completed_time = ensure_dt_localize(record['completed_time'])
         delta = end - completed_time
 
-        # 最近4小时之内已经完成，不再刷新
-        if record['completed'] and delta < pd.Timedelta(hours=4):
+        # 最近12小时之内已经完成，不再刷新
+        if record['completed'] and delta < pd.Timedelta(hours=12):
             completed = True
         if completed:
-            logger.info(f"在最近4小时内，{DB_CONFIG[one]['name']}({one}) 数据已经刷新")
+            logger.info(f"在最近12小时内，{DB_CONFIG[one]['name']}({one}) 数据已经刷新")
             return
+        # 此时codes务必设置为None
+        web_data, record, kwargs = self._get_one(fetch_data_func, one, kwargs,
+                                                 None, start, end)
+        hdf.add(web_data, record, kwargs)
 
-        if codes_0 is None or len(codes_0):
-            web_data_0, record_0, kwargs_0 = self._get_one(
-                fetch_data_func, one, kwargs, codes_0, start_0, end)
-            hdf.add(web_data_0, record_0, kwargs_0)
-        # 单个添加
-        if len(codes_1):
-            web_data_1, record_1, kwargs_1 = self._get_one(
-                fetch_data_func, one, kwargs, codes_1, start_1, end)
-            if not web_data_1.empty:
-                grouped = web_data_1.groupby('股票代码')
-                for code, group in grouped:
-                    hdf.insert_by(group, record_1, kwargs_1, '股票代码', code)
+        # 然后完成附加代码
+        for code in new_codes:
+            self._one_by_one(one, code, kwargs)
 
     def refresh_batch(self, batch):
         """分批刷新"""
@@ -566,6 +584,8 @@ class ASRefresher(RefresherBase):
             },
         }
         api = AdvanceSearcher()
+        if self._fs is None:
+            self._fs = FastSearcher()
         codes = api.codes
         fetch_data_func = api.get_data
         for one in batch:
@@ -574,6 +594,8 @@ class ASRefresher(RefresherBase):
             except Exception as e:
                 print(f"{e!r}")
         api.driver.quit()
+        if self._fs:
+            self._fs.driver.quit()
 
 
 class MarginDataRefresher(RefresherBase):

@@ -7,6 +7,7 @@
 import datetime as dt
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from pandas.api.types import is_number
 from pandas.tseries.offsets import (BDay, Day, Hour, Minute, MonthBegin,
@@ -155,6 +156,8 @@ def _sanitize_date(obj, default):
     """转换为日期对象，如果为None则使用默认值。输出datetime.date对象"""
     if isinstance(obj, pd.Timestamp):
         return obj
+    if isinstance(obj, np.datetime64):
+        return pd.Timestamp(obj)
     # 务必排在dt.date之前
     if isinstance(obj, dt.datetime):
         return ensure_dt_localize(obj)

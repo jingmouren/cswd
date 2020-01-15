@@ -354,3 +354,4 @@ cnswd.egg-info/
 .pytest_cache/
 win_tasks/
 pytest_report.html
+testing/t.py
