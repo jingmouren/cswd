@@ -520,11 +520,25 @@ class ASRefresher(RefresherBase):
         df = query(fp, stmt)
         return df['上市日期'].values[0]
 
+    def _update_inited_codes(self, record, code):
+        # 解决项目数据反复刷新问题
+        inited_codes = record.get('inited_codes', [])
+        if record['completed']:
+            inited_codes.append(code)
+        record['inited_codes'] = inited_codes
+        return record
+
     def _one_by_one(self, one, code, kwargs):
         """使用快速搜索
         
         避免开始日期设置为市场开始日期，无效循环，导致引发异常
         """
+        hdf = self.get_hdfdata(one)
+        # 已经初始化的股票代码
+        inited_codes = hdf.record.get('inited_codes', [])
+        # 已经初始化的代码，无需再次初始化刷新
+        if code in inited_codes:
+            return
         start = self._get_ipo_by_code(code)
         end = pd.Timestamp.now()
         # 未上市或在未来日期上市的股票，暂不刷新
@@ -535,10 +549,10 @@ class ASRefresher(RefresherBase):
         # 财务报告类在上市日期前三年
         if one.startswith('7.'):
             start -= pd.Timedelta(days=3 * 365)
-        hdf = self.get_hdfdata(one)
         fetch_data_func = self._fs.get_data
         web_data, record, kwargs = self._get_one(fetch_data_func, one, kwargs,
                                                  code, start, end)
+        record = self._update_inited_codes(record, code)
         if not web_data.empty:
             hdf.insert_by(web_data, record, kwargs, '股票代码', code)
 
