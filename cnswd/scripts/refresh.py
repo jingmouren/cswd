@@ -401,8 +401,13 @@ class FSRefresher(RefresherBase):
 
 
 class ASRefresher(RefresherBase):
-    """高级搜索刷新器"""
-    _fs = None
+    """高级搜索刷新器
+
+    目前使用单进程刷新
+    """
+    _fs = None  # 快速搜索
+    _as = None  # 高级搜索
+    _current_api = None
 
     @property
     def iterables(self):
@@ -503,6 +508,10 @@ class ASRefresher(RefresherBase):
                 logger.exception(f"第{i}次尝试提取网络数据，{one}出现异常\n")
                 record['completed'] = False
                 record['memo'] = f"第{i}次尝试中出现异常{e}"
+                if self._current_api == 'as':
+                    self._as.reset()
+                elif self._current_api == 'fs':
+                    self._fs.reset()
             finally:
                 record['completed_time'] = pd.Timestamp.now(tz=TZ)
                 record['retry_times'] = i
@@ -513,6 +522,10 @@ class ASRefresher(RefresherBase):
     def _get_ipo_by_code(self, code):
         """查询股票上市日期"""
         fp = self.get_data_path('1')
+        if not fp.exists():
+            msg = '首先刷新股票基本资料(1)，才能提供上市日期信息，运行：\n stock asr --item 1'
+            warnings.warn(msg)
+            return None
         args = [
             ('股票代码', Ops.eq, code),
         ]
@@ -525,7 +538,7 @@ class ASRefresher(RefresherBase):
         inited_codes = record.get('inited_codes', [])
         if record['completed']:
             inited_codes.append(code)
-        record['inited_codes'] = inited_codes
+        record['inited_codes'] = list(set(inited_codes))
         return record
 
     def _one_by_one(self, one, code, kwargs):
@@ -550,6 +563,7 @@ class ASRefresher(RefresherBase):
         if one.startswith('7.'):
             start -= pd.Timedelta(days=3 * 365)
         fetch_data_func = self._fs.get_data
+        self._current_api = 'fs'
         web_data, record, kwargs = self._get_one(fetch_data_func, one, kwargs,
                                                  code, start, end)
         # 如果刷新成功，则将代码添加到已经完成初始化刷新代码列表中
@@ -557,7 +571,7 @@ class ASRefresher(RefresherBase):
         if not web_data.empty:
             hdf.insert_by(web_data, record, kwargs, '股票代码', code)
 
-    def refresh_one(self, fetch_data_func, one, kwargs, web_codes):
+    def refresh_one(self, one, kwargs, web_codes):
         """单项刷新"""
         local_codes = self.get_hdfdata(one).get_codes()
         hdf = self.get_hdfdata(one)
@@ -586,6 +600,8 @@ class ASRefresher(RefresherBase):
             logger.info(f"在最近12小时内，{DB_CONFIG[one]['name']}({one}) 数据已经刷新")
             return
         # 此时codes务必设置为None
+        fetch_data_func = self._as.get_data
+        self._current_api = 'as'
         web_data, record, kwargs = self._get_one(fetch_data_func, one, kwargs,
                                                  None, start, end)
         hdf.add(web_data, record, kwargs)
@@ -601,17 +617,18 @@ class ASRefresher(RefresherBase):
                 '股票简称': 20,
             },
         }
-        api = AdvanceSearcher()
+        if self._as is None:
+            self._as = AdvanceSearcher()
         if self._fs is None:
             self._fs = FastSearcher()
-        codes = api.codes
-        fetch_data_func = api.get_data
+        codes = self._as.codes
         for one in batch:
             try:
-                self.refresh_one(fetch_data_func, one, kwargs, codes)
+                self.refresh_one(one, kwargs, codes)
             except Exception as e:
                 print(f"{e!r}")
-        api.driver.quit()
+        if self._as:
+            self._as.driver.quit()
         if self._fs:
             self._fs.driver.quit()
 

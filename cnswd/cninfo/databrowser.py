@@ -48,11 +48,12 @@ class DataBrowser(object):
                          self.check_loaded_css_value, msg)
         self.driver.implicitly_wait(0.5)
         self.logger.notice(f'加载主页用时：{(time.time() - start):>0.4f}秒')
+        self._base_config()
 
+    def _base_config(self):
         # 类变量
         self.code_loaded = False
         self.current_level = ''
-        self.code_loaded = False
         self.current_t1_css = ''
         self.current_t2_css = ''
         self.current_t1_value = ''
@@ -73,24 +74,15 @@ class DataBrowser(object):
         """恢复至初始状态"""
         if self.driver is None:
             self._ensure_init()
-
+        # 一般而言出现异常均有提示信息出现
+        try:
+            self.driver.switch_to.alert.dismiss()
+        except Exception:
+            pass
+        # 刷新浏览器
         self.driver.refresh()
-
-        msg = f"首次加载{self.api_name}超时"
-        # 特定元素可见，完成首次页面加载
-        wait_page_loaded(self.wait, self.check_loaded_css,
-                         self.check_loaded_css_value, msg)
-        # 转换模式
-        self._bt()
-
-        # 类变量
-        self.current_level = ''
-        self.code_loaded = False
-        self.current_t1_css = ''
-        self.current_t2_css = ''
-        self.current_t1_value = ''
-        self.current_t2_value = ''
-        self.current_code = ''
+        # 恢复基础配置
+        self._base_config()
 
     def _bt(self):
         raise NotImplementedError('子类中完成')
