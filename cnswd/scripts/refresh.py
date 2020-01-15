@@ -532,6 +532,9 @@ class ASRefresher(RefresherBase):
         if one not in ('1', '6.5'):
             if pd.isnull(start) or start >= end:
                 return
+        # 财务报告类在上市日期前三年
+        if one.startswith('7.'):
+            start -= pd.Timedelta(days=3 * 365)
         hdf = self.get_hdfdata(one)
         fetch_data_func = self._fs.get_data
         web_data, record, kwargs = self._get_one(fetch_data_func, one, kwargs,
