@@ -9,8 +9,8 @@ class Ops(Enum):
     eq = 1  # ==
     gte = 2  # >=
     lse = 3  # <=
-    gt = 4 # >
-    ls = 5 # <
+    gt = 4  # >
+    ls = 5  # <
 
 
 def _to_op_symbol(e):
@@ -55,11 +55,14 @@ def query_stmt(*args):
 
 
 def query(fp, stmt):
+    if not fp.exists():
+        raise FileNotFoundError(f"找不到文件：{fp}")
     try:
         store = pd.HDFStore(fp, mode='r')
         df = store.select('data', stmt, auto_close=True)
-        store.close()
-        return df
     except Exception as e:
         warnings.warn(f"{e!r}")
-        return pd.DataFrame()
+        df = pd.DataFrame()
+    finally:
+        store.close()
+    return df
