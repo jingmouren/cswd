@@ -58,8 +58,11 @@ def minutely_history(code=None, start=None, end=None):
         dp_dir = data_root(f"TCT/{d.strftime(r'%Y%m%d')}")
         fps = dp_dir.glob('*.pkl')
         for fp in fps:
-            df = _minutely_history(fp)
-            dfs.append(df)
+            dt = fp.name.split('.')[0]
+            dt = pd.Timestamp(int(dt), unit='s')
+            if start <= dt <= end:
+                df = _minutely_history(fp)
+                dfs.append(df)
     ret = pd.concat(dfs)
     cond = (ret['时间'] >= start) & (ret['时间'] <= end)
     ret = ret[cond]
