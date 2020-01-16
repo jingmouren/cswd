@@ -604,6 +604,11 @@ class ASRefresher(RefresherBase):
         self._current_api = 'as'
         web_data, record, kwargs = self._get_one(fetch_data_func, one, kwargs,
                                                  None, start, end)
+        # 如果为首次刷新，则将已经完成的代码添加到已经初始化的代码列表中
+        if len(new_codes) == 0 and not web_data.empty:
+            codes = web_data['股票代码'].unique()
+            for code in codes:
+                record = self._update_inited_codes(record, code)
         hdf.add(web_data, record, kwargs)
 
         # 然后完成附加代码
