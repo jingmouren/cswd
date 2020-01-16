@@ -586,7 +586,7 @@ class ASRefresher(RefresherBase):
 
         end = pd.Timestamp.now(tz=TZ)
         # 初始化时使用分段 ■
-        # end = pd.Timestamp('2010-12-31', tz=TZ)
+        # end = pd.Timestamp('2000-12-31', tz=TZ)
         start = self.get_start(one, use_last_date)
 
         completed = False
@@ -632,9 +632,9 @@ class ASRefresher(RefresherBase):
                 self.refresh_one(one, kwargs, codes)
             except Exception as e:
                 print(f"{e!r}")
-        if self._as:
+        if self._as and self._as.driver:
             self._as.driver.quit()
-        if self._fs:
+        if self._fs and self._fs.driver:
             self._fs.driver.quit()
 
 

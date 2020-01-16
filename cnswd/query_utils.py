@@ -60,6 +60,9 @@ def query(fp, stmt):
     try:
         store = pd.HDFStore(fp, mode='r')
         df = store.select('data', stmt, auto_close=True)
+    except KeyError:
+        # 当h5文件不存在data节点时触发
+        raise ValueError('数据内容为空，请刷新项目数据。')
     except Exception as e:
         warnings.warn(f"{e!r}")
         df = pd.DataFrame()
