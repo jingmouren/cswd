@@ -569,6 +569,7 @@ class ASRefresher(RefresherBase):
         # 如果刷新成功，则将代码添加到已经完成初始化刷新代码列表中
         record = self._update_inited_codes(record, code)
         # 无论数据是否为空都要更新record
+        # 如金融类财报，非金融类股票数据为空，如不添加进去，每次刷新时会无效重复
         hdf.insert_by(web_data, record, kwargs, '股票代码', code)
 
     def refresh_one(self, one, kwargs, web_codes):
