@@ -568,8 +568,8 @@ class ASRefresher(RefresherBase):
                                                  code, start, end)
         # 如果刷新成功，则将代码添加到已经完成初始化刷新代码列表中
         record = self._update_inited_codes(record, code)
-        if not web_data.empty:
-            hdf.insert_by(web_data, record, kwargs, '股票代码', code)
+        # 无论数据是否为空都要更新record
+        hdf.insert_by(web_data, record, kwargs, '股票代码', code)
 
     def refresh_one(self, one, kwargs, web_codes):
         """单项刷新"""
