@@ -502,7 +502,7 @@ class ASRefresher(RefresherBase):
                     # 快速搜索
                     web_data = fetch_data_func(one, codes, start, end)
                 record['completed'] = True
-                record['memo'] = '-'  # 清除此前可能遗留的备注
+                record['memo'] = ''  # 清除此前可能遗留的备注
             except Exception as e:
                 web_data = pd.DataFrame()
                 logger.exception(f"第{i}次尝试提取网络数据，{one}出现异常\n")
@@ -534,7 +534,7 @@ class ASRefresher(RefresherBase):
         return df['上市日期'].values[0]
 
     def _update_inited_codes(self, record, code):
-        # 解决项目数据反复刷新问题
+        # 解决单个股票无项目数据需要反复刷新问题
         inited_codes = record.get('inited_codes', [])
         if record['completed']:
             inited_codes.append(code)

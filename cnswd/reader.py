@@ -65,7 +65,7 @@ def minutely_history(code=None, start=None, end=None):
                 dfs.append(df)
     ret = pd.concat(dfs)
     cond = (ret['时间'] >= start) & (ret['时间'] <= end)
-    ret = ret[cond]
+    ret = ret[cond].drop_duplicates(['代码', '时间'], keep='last')
     ret['代码'] = ret['代码'].map(lambda x: x[2:])
     if code:
         return ret[ret['代码'] == code]

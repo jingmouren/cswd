@@ -16,10 +16,10 @@ import warnings
 
 import pandas as pd
 
-from cnswd.setting.constants import MARKET_START
-from cnswd.utils import make_logger
-
+from .setting.constants import MARKET_START
+from .utils import make_logger
 from .query_utils import Ops, query, query_stmt
+
 
 default_status = {
     'completed': False,  # 网络提取状态，如途中发生异常为False
@@ -58,7 +58,6 @@ class HDFData(object):
         self._fp = fp
         assert mode in ('a', 'w'), '只支持添加和写入模式'
         self._mode = mode
-        self._record = default_status.copy()
         self.logger = make_logger('HDFData')
         self._codes = None
 
@@ -83,7 +82,7 @@ class HDFData(object):
         try:
             self._record = pd.read_hdf(self._fp, 'record').to_dict()
         except Exception:
-            pass
+            self._record = default_status.copy()
         return self._record
 
     @property
@@ -171,9 +170,7 @@ class HDFData(object):
 
     def _set_record(self, record):
         """设置刷新记录(仅当存在数据对象时有效)"""
-        # self._check_valid(record)
-        self._record.update(record)
-        s = pd.Series(self._record)
+        s = pd.Series(record)
         # 刷新方式写入记录
         s.to_hdf(self._fp, 'record', append=False)
 
