@@ -554,6 +554,8 @@ class ASRefresher(RefresherBase):
             return
         start = self._get_ipo_by_code(code)
         end = pd.Timestamp.now()
+        if start is not None and start > end:
+            return
         # 未上市或在未来日期上市的股票，暂不刷新
         # 但股票概况或IPO则需要
         if one not in ('1', '6.5'):
@@ -593,7 +595,8 @@ class ASRefresher(RefresherBase):
         completed = False
         completed_time = ensure_dt_localize(record['completed_time'])
         delta = end - completed_time
-
+        if start is not None and ensure_dt_localize(start) > end:
+            completed = True
         # 最近12小时之内已经完成，不再刷新
         if record['completed'] and delta < pd.Timedelta(hours=12):
             completed = True
