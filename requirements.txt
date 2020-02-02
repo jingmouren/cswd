@@ -19,3 +19,4 @@ aiohttp>=3.4.4
 psutil>=5.6.1
 tenacity>=5.1.1
 tables>=3.6.0
+selenium-wire>=1.0.11
