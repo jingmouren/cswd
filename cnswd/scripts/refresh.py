@@ -307,7 +307,10 @@ class RefresherBase(object):
                 record['retry_times'] = i
                 record, web_data = self._normalize_data(
                     one, web_data, record, use_last_date)
-        hdf.add(web_data, record, kwargs)
+        try:
+            hdf.add(web_data, record, kwargs)
+        except Exception as e:
+            logger.error(f"{e!r}")
 
     def refresh_batch(self, batch):
         """分批刷新"""
@@ -504,6 +507,7 @@ class ASRefresher(RefresherBase):
                 record['completed'] = True
                 record['memo'] = ''  # 清除此前可能遗留的备注
             except Exception as e:
+                time.sleep(0.3)
                 web_data = pd.DataFrame()
                 logger.exception(f"第{i}次尝试提取网络数据，{one}出现异常\n")
                 record['completed'] = False
@@ -911,7 +915,9 @@ class WYSRefresher(RefresherBase):
     def refresh_batch(self, batch):
         """分批刷新"""
         kwargs = {
+            'data_columns': ['股票代码', '日期'],
             'min_itemsize': {
+                '股票代码': 7,
                 '名称': 20,
             },
         }
@@ -963,7 +969,12 @@ class WYIRefresher(RefresherBase):
 
     def refresh_batch(self, batch):
         """分批刷新"""
-        kwargs = {'data_columns': ['日期']}
+        kwargs = {
+            'data_columns': ['股票代码', '日期'],
+            'min_itemsize': {
+                '股票代码': 7,
+            },
+        }
         fetch_data_func = partial(fetch_history, is_index=True)
         for one in batch:
             self.refresh_one(fetch_data_func, one, kwargs)
@@ -1092,6 +1103,14 @@ class SinaNewsRefresher(RefresherBase):
         """索引列名称"""
         return '时间'
 
+    def get_col_dtypes(self, one):
+        """列数据类型"""
+        return {
+            'd_cols': ['时间'],
+            's_cols': ['概要', '分类'],
+            'i_cols': ['序号'],
+        }
+
     def get_freq(self, one):
         """刷新频率"""
         return 'D'
@@ -1102,7 +1121,7 @@ class SinaNewsRefresher(RefresherBase):
 
     def get_data_columns(self, one):
         """查询数据列"""
-        return ['证券代码', '交易日期']
+        return ['时间', '分类', '序号']
 
     def refresh_all(self, times=3):
         """刷新"""
@@ -1110,10 +1129,12 @@ class SinaNewsRefresher(RefresherBase):
         record = {
             'index_col': '时间',
         }
-        kwargs = {'data_columns': ['时间', '分类'], 'min_itemsize': {'概要': 2000}}
+        kwargs = {'min_itemsize': {'概要': 2000}}
+        kwargs['subset'] = ['序号']
+        kwargs.update({'data_columns': self.get_data_columns(None)})
         with Sina247News() as api:
             history = api.history_news(times)
-        history.drop(columns='序号', inplace=True)
+        history = ensure_dtypes(history, **self.get_col_dtypes(None))
         history.sort_values('时间', inplace=True)
         record['completed'] = True
         now = pd.Timestamp.now(tz=TZ)
@@ -1121,7 +1142,7 @@ class SinaNewsRefresher(RefresherBase):
         record['next_time'] = time_for_next_update(now, 'H', 30)
         fp = self.get_data_path(None)
         hdf = HDFData(fp, self.get_mode(None))
-        hdf.add(history, record, kwargs)
+        hdf.insert(history, record, kwargs)
 
 
 class TreasuryRefresher(RefresherBase):

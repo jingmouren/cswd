@@ -20,7 +20,6 @@ from .setting.constants import MARKET_START
 from .utils import make_logger
 from .query_utils import Ops, query, query_stmt
 
-
 default_status = {
     'completed': False,  # 网络提取状态，如途中发生异常为False
     'retry_times': 0,  # 记录网络提取尝试次数
@@ -200,6 +199,7 @@ class HDFData(object):
         else:
             raise ValueError(f'写入hdf不支持{action}')
         data = self._ensure_pop_index(data)
+        kwargs['append'] = True
         data.to_hdf(self._fp, 'data', **kwargs)
 
     def _get_to_add(self, df, record, subset):
@@ -276,6 +276,29 @@ class HDFData(object):
             self._append(df, record, default)
         else:
             self._rewrite(df, record, default)
+
+    def insert(self, df, record, kwargs):
+        """插入数据及记录"""
+        if not record['completed']:
+            return
+        default = to_hdf_kwargs.copy()
+        default.update(kwargs)
+        index_col = record['index_col']
+        max_index = self.record['max_index']
+        if max_index is None:
+            to_add = df
+            max_index = max(df[index_col])
+        else:
+            cond = df[index_col] > max_index
+            to_add = df[cond]
+            if len(to_add):
+                max_index = max(to_add[index_col])
+        self._to_hdf(to_add, kwargs, 'append')
+        rows = len(to_add)
+        self.logger.info(f"添加{rows}行 -> {self._fp}")
+        record['max_index'] = max_index
+        record['subset'] = kwargs.get('subset', None)
+        self._set_record(record)
 
     def insert_by(self, df, record, kwargs, by, value):
         default = to_hdf_kwargs.copy()

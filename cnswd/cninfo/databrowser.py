@@ -81,6 +81,7 @@ class DataBrowser(object):
             pass
         # 刷新浏览器
         self.driver.refresh()
+        self.driver.implicitly_wait(0.5)
         # 恢复基础配置
         self._base_config()
 
