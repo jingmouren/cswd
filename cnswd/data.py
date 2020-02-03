@@ -182,7 +182,7 @@ class HDFData(object):
                 'data',
                 mode='w',  # 删除现有文件
                 append=False,
-                ignore_index=True,
+                # ignore_index=True,
                 data_columns=data_columns,
                 format='table')
             self.logger.info(f"写入{len(df)}行 -> {self._fp}")
@@ -200,6 +200,10 @@ class HDFData(object):
             raise ValueError(f'写入hdf不支持{action}')
         data = self._ensure_pop_index(data)
         kwargs['append'] = True
+        if 'subset' in kwargs.keys():
+            kwargs.pop('subset')
+        if 'ignore_index' in kwargs.keys():
+            kwargs.pop('ignore_index')
         data.to_hdf(self._fp, 'data', **kwargs)
 
     def _get_to_add(self, df, record, subset):

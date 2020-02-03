@@ -45,7 +45,7 @@ def _one_stock(code):
                 logger = make_logger(item)
                 start = get_start(code, item)
                 if start > today:
-                    info = f"{code} {start} ~ {today} 无数据"
+                    info = f"{code} {start.strftime(r'%Y-%m-%d')} ~ {today.strftime(r'%Y-%m-%d')} 无数据"
                     logger.info(info)
                     continue
                 web_data = func(code, period_type=period_type)
@@ -59,7 +59,7 @@ def _one_stock(code):
                                    sort=False).drop_duplicates(subset='date')
                     df.to_pickle(fp)
                     rows = len(df)
-                info = f"添加 {code} {start} ~ {today} {rows}行"
+                info = f"添加 {code} {start.strftime(r'%Y-%m-%d')} ~ {today.strftime(r'%Y-%m-%d')} {rows}行"
                 logger.info(info)
 
 

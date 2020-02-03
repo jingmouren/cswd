@@ -4,8 +4,10 @@ import re
 import time
 
 import pandas as pd
+from selenium.webdriver.support.ui import Select, WebDriverWait
 
 from .._seleniumwire import make_headless_browser
+from ..setting.config import POLL_FREQUENCY, TIMEOUT
 from ..utils.log_utils import make_logger
 from ..utils.pd_utils import _concat
 from .ops import toggler_close, toggler_open, wait_page_loaded
@@ -103,32 +105,34 @@ class ClassifyTree(object):
     api_e_name = 'dataBrowse'
 
     check_loaded_css = '.nav-second > div:nth-child(1) > h1:nth-child(1)'
-    check_loaded_css_value = api_name
+    check_loaded_css_value = '数据浏览器'
 
     def __init__(self, log_to_file=None):
-        start = time.time()
         self.log_to_file = log_to_file
-        self.driver = make_headless_browser()
-        name = str(os.getpid()).zfill(6)
-        self.logger = make_logger(name, log_to_file)
-        self._load_page()
-        self.driver.maximize_window()
-        # 确保加载完成
-        self.driver.implicitly_wait(0.2)
-        self.logger.notice(f'加载主页用时：{(time.time() - start):>0.4f}秒')
+        self.driver = None
 
-    def _load_page(self):
-        # 如果重复加载同一网址，耗时约为1ms
-        self.logger.info(self.api_name)
-        url = HOME_URL_FMT.format(self.api_e_name)
+    def _ensure_init(self):
+        url = 'http://webapi.cninfo.com.cn/#/dataBrowse'
+        start = time.time()
+        self.driver = make_headless_browser()
+        self.wait = WebDriverWait(self.driver, TIMEOUT, POLL_FREQUENCY)
+        name = f"{self.api_name}{str(os.getpid()).zfill(6)}"
+        self.logger = make_logger(name, self.log_to_file)
         self.driver.get(url)
-        self.driver.wait_for_request(self.driver.last_request.path)
+        # 确保加载完成
+        msg = f"首次加载{self.api_name}超时"
+        # 特定元素可见，完成首次页面加载
+        wait_page_loaded(self.wait, self.check_loaded_css,
+                         self.check_loaded_css_value, msg)
+        self.driver.implicitly_wait(0.5)
+        self.logger.notice(f'加载主页用时：{(time.time() - start):>0.4f}秒')
 
     def __enter__(self):
         return self
 
     def __exit__(self, *args):
-        self.driver.quit()
+        if self.driver is not None:
+            self.driver.quit()
 
     def btn2(self):
         """高级搜索"""
@@ -192,6 +196,8 @@ class ClassifyTree(object):
     @property
     def classify_bom(self):
         """股票分类BOM表"""
+        if self.driver is None:
+            self._ensure_init()
         self.btn2()
         roots = self.driver.find_elements_by_css_selector(
             '.classify-tree > li')
@@ -209,6 +215,8 @@ class ClassifyTree(object):
 
     def get_tree_attribute(self, nth):
         """获取分类树属性"""
+        if self.driver is None:
+            self._ensure_init()
         self.btn2()
         res = {}
         encoder = _LevelEncoder()
@@ -231,6 +239,8 @@ class ClassifyTree(object):
 
     def get_classify_tree(self, n):
         """获取分类树层级下的股票列表"""
+        if self.driver is None:
+            self._ensure_init()
         self.btn2()
         self.driver.implicitly_wait(0.2)
         levels = self.get_tree_attribute(n)

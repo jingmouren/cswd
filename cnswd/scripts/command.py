@@ -171,7 +171,7 @@ def gntime():
 
 @stock.command()
 def yahoo():
-    """刷新雅虎数据"""
+    """刷新雅虎财经数据"""
     refresh_yahoo_data()
 
 
