@@ -139,10 +139,7 @@ def calendar():
 @stock.command()
 def cjmx():
     """刷新近期成交明细"""
-    # 多次刷新。可能存在漏网之鱼
-    for i in range(1, 4):
-        print(f'第{i}次尝试')
-        refresh_wy_cjmx()
+    refresh_wy_cjmx()
 
 
 # endregion
