@@ -74,9 +74,9 @@ def write_cjmx(codes, date):
 
 
 def stock_is_trading(code, date):
-    """股票当天是否交易"""
-    df = daily_history(code, date, date)
+    """股票当天是否交易"""   
     try:
+        df = daily_history(code, date, date)
         cond = df.loc[df['日期'] == date, '成交量'].values[0]
         if cond > 0:
             return code
@@ -98,15 +98,9 @@ def get_traded_codes(date):
     return [x for x in res if x is not None]
 
 
-def refresh_wy_cjmx(date_str):
+def _refresh_wy_cjmx(date):
     """刷新指定日期成交明细数据"""
-    date = pd.Timestamp(date_str).normalize()
-    if not is_trading_day(date):
-        logger.info(f'{date_str} 非交易日')
-        return
-    if date.to_datetime64() not in _last_5():
-        logger.warning(f'只能下载最近5个交易日的成交明细')
-        return
+    date = pd.Timestamp(date)
     codes = get_traded_codes(date)
     shuffle(codes)
     print(f'{date.strftime(DATE_FMT)} 共{len(codes)}只股票交易')
@@ -115,3 +109,8 @@ def refresh_wy_cjmx(date_str):
     func = partial(write_cjmx, date=date)
     with Pool(MAX_WORKER) as pool:
         pool.map(func, batchs)
+
+
+def refresh_wy_cjmx():
+    for d in _last_5():
+        _refresh_wy_cjmx(d)

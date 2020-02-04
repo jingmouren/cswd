@@ -137,15 +137,12 @@ def calendar():
 
 
 @stock.command()
-@click.option('--date', default=None, help='刷新日期')
-def cjmx(date):
+def cjmx():
     """刷新近期成交明细"""
-    if date is None:
-        date = pd.Timestamp('today').normalize()
     # 多次刷新。可能存在漏网之鱼
     for i in range(1, 4):
         print(f'第{i}次尝试')
-        refresh_wy_cjmx(date)
+        refresh_wy_cjmx()
 
 
 # endregion
